@@ -130,7 +130,6 @@ func (r *Runner) run(challenge []byte) error {
 	log.LogInfo("ready to receive tasks")
 
 	for {
-
 		task, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
@@ -139,35 +138,29 @@ func (r *Runner) run(challenge []byte) error {
 			}
 
 			log.LogError(errors.Wrap(err, "stream error"))
-			continue
+			break
 		}
 
 		log.LogInfo(fmt.Sprintf("received task with uuid %s", task.UUID))
 
-		resultChan := make(chan interface{})
-
-		go func(handler TaskHandler, task *model.Task, resultChan chan interface{}) {
-			update, err := handler(task)
-			if err != nil {
-				// if the handler errors, send the error as the result
-				resultChan <- err
-			}
-
-			// if it succeeds, send the result
-			resultChan <- update
-		}(r.handler, task, resultChan)
-
-		result := <-resultChan
-
-		if err, ok := result.(error); ok {
-			if err := r.sendUpdate(task, nil, err); err != nil {
+		go func(handler TaskHandler, task *model.Task) {
+			if err := r.sendUpdate(task, nil, nil); err != nil {
 				log.LogError(errors.Wrap(err, "failed to sendUpdate"))
 			}
-		} else {
+
+			result, err := handler(task)
+			if err != nil {
+				if err := r.sendUpdate(task, nil, err); err != nil {
+					log.LogError(errors.Wrap(err, "failed to sendUpdate"))
+				}
+
+				return
+			}
+
 			if err := r.sendUpdate(task, result, nil); err != nil {
 				log.LogError(errors.Wrap(err, "failed to sendUpdate"))
 			}
-		}
+		}(r.handler, task)
 	}
 
 	return nil

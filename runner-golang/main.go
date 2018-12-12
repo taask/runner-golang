@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
+	"time"
 
 	log "github.com/cohix/simplog"
 	"github.com/pkg/errors"
@@ -27,7 +29,12 @@ func main() {
 			return nil, errors.Wrap(err, "failed to Unmarshal")
 		}
 
-		log.LogInfo(fmt.Sprintf("solving %d + %d", problem.First, problem.Second))
+		seconds := rand.Intn(5)
+
+		log.LogInfo(fmt.Sprintf("solving %d + %d in %d seconds", problem.First, problem.Second, seconds))
+
+		<-time.After(time.Second * time.Duration(seconds))
+
 		return answer{Answer: problem.First + problem.Second}, nil
 	})
 
