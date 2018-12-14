@@ -141,6 +141,11 @@ func (r *Runner) run(challenge []byte) error {
 			break
 		}
 
+		if task.UUID == "" {
+			// an empty task is like a heartbeat, ignore it
+			continue
+		}
+
 		log.LogInfo(fmt.Sprintf("received task with uuid %s", task.UUID))
 
 		go func(handler TaskHandler, task *model.Task) {
