@@ -184,7 +184,7 @@ func (r *Runner) sendUpdate(task *model.Task, result interface{}, taskErr error)
 			return errors.Wrap(err, "failed to GenerateSymKey")
 		}
 
-		resultPubKey, err := simplcrypto.KeyPairFromSerializedPubKey(task.ResultPubKey)
+		resultPubKey, err := simplcrypto.KeyPairFromSerializedPubKey(task.Meta.ResultPubKey)
 		if err != nil {
 			return errors.Wrap(err, "failed to KeyPairFromSerializedPubKey")
 		}
