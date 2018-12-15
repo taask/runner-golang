@@ -173,7 +173,8 @@ func (r *Runner) run(challenge []byte) error {
 
 func (r *Runner) sendUpdate(task *model.Task, result interface{}, taskErr error) error {
 	update := &model.TaskUpdate{
-		UUID: task.UUID,
+		UUID:        task.UUID,
+		ResultToken: task.Meta.ResultToken,
 	}
 
 	if result == nil && taskErr == nil {
