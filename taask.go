@@ -149,6 +149,7 @@ func (r *Runner) run(challenge []byte) error {
 		log.LogInfo(fmt.Sprintf("received task with uuid %s", task.UUID))
 
 		go func(handler TaskHandler, task *model.Task) {
+			// set task status to active
 			if err := r.sendUpdate(task, nil, nil); err != nil {
 				log.LogError(errors.Wrap(err, "failed to sendUpdate"))
 			}
@@ -172,10 +173,7 @@ func (r *Runner) run(challenge []byte) error {
 }
 
 func (r *Runner) sendUpdate(task *model.Task, result interface{}, taskErr error) error {
-	update := &model.TaskUpdate{
-		UUID:        task.UUID,
-		ResultToken: task.Meta.ResultToken,
-	}
+	update := model.TaskUpdate{}
 
 	if result == nil && taskErr == nil {
 		update.Status = model.TaskStatusRunning
@@ -222,7 +220,12 @@ func (r *Runner) sendUpdate(task *model.Task, result interface{}, taskErr error)
 		update.EncResultSymKey = encResultKey
 	}
 
-	if _, err := r.client.UpdateTask(context.Background(), update); err != nil {
+	realUpdate, err := task.Update(update)
+	if err != nil {
+		return errors.Wrap(err, "failed to task.Update")
+	}
+
+	if _, err := r.client.UpdateTask(context.Background(), realUpdate); err != nil {
 		return errors.Wrap(err, "failed to UpdateTask")
 	}
 
