@@ -110,7 +110,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:e6a487cbb8049cfd673e5ce0a005287bade4a7c9199609421b66a05233a31251"
+  digest = "1:57e4354c15956246bf0ff0951d46c58e25a5f28fdbce06e238d3f507e8e392a7"
   name = "github.com/taask/taask-server"
   packages = [
     "auth",
@@ -124,7 +124,15 @@
     "update",
   ]
   pruneopts = "UT"
-  revision = "8055689b30c7afde994a023fef588459fe6f29cd"
+  revision = "31a7b73503a03f3ea121b783445aafcb158f874e"
+
+[[projects]]
+  branch = "master"
+  digest = "1:f92f6956e4059f6a3efc14924d2dd58ba90da25cc57fe07ae3779ef2f5e0c5f2"
+  name = "golang.org/x/crypto"
+  packages = ["pbkdf2"]
+  pruneopts = "UT"
+  revision = "505ab145d0a99da450461ae2c1a9f6cd10d1f447"
 
 [[projects]]
   branch = "master"
