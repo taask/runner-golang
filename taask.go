@@ -2,14 +2,17 @@ package taask
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/cohix/simplcrypto"
 
 	log "github.com/cohix/simplog"
 	"github.com/pkg/errors"
+	"github.com/taask/taask-server/auth"
 	"github.com/taask/taask-server/model"
 	"github.com/taask/taask-server/service"
 	"google.golang.org/grpc"
@@ -74,14 +77,16 @@ func (r *Runner) ConnectAndRun(joinCode, addr, port string) error {
 func (r *Runner) auth(joinCode string) ([]byte, error) {
 	defer log.LogTrace("auth")()
 
-	joinSig, err := r.keypair.Sign([]byte(joinCode))
+	authHashSignature, timestamp, err := signedAuthHashAttempt(r.keypair, joinCode)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to Sign")
+		return nil, errors.Wrap(err, "failed to signedAuthHashAttempt")
 	}
 
 	authReq := &service.AuthRunnerRequest{
+		UUID:              r.runner.UUID,
 		PubKey:            r.keypair.SerializablePubKey(),
-		JoinCodeSignature: joinSig,
+		AuthHashSignature: authHashSignature,
+		Timestamp:         timestamp,
 	}
 
 	resp, err := r.client.AuthRunner(context.Background(), authReq)
@@ -89,17 +94,7 @@ func (r *Runner) auth(joinCode string) ([]byte, error) {
 		return nil, errors.Wrap(err, "failed to AuthRunner")
 	}
 
-	challengeKeyJSON, err := r.keypair.Decrypt(resp.EncChallengeKey)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to Decrypt challengeKey")
-	}
-
-	challengeKey, err := simplcrypto.SymKeyFromJSON(challengeKeyJSON)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to SymKeyFromJSON")
-	}
-
-	challenge, err := challengeKey.Decrypt(resp.EncChallenge)
+	challenge, err := r.keypair.Decrypt(resp.EncChallenge)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to Decrypt challenge")
 	}
@@ -237,4 +232,21 @@ func (r *Runner) sendUpdate(task *model.Task, taskKey *simplcrypto.SymKey, resul
 	}
 
 	return nil
+}
+
+func signedAuthHashAttempt(keypair *simplcrypto.KeyPair, joinCode string) (*simplcrypto.Signature, int64, error) {
+	groupAuthHash := auth.GroupAuthHash(joinCode, "")
+
+	now := time.Now().Unix()
+
+	nonce := make([]byte, 8)
+	binary.LittleEndian.PutUint64(nonce, uint64(now))
+	hashWithNonce := append(groupAuthHash, nonce...)
+
+	joinSig, err := keypair.Sign(hashWithNonce)
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "failed to Sign")
+	}
+
+	return joinSig, now, nil
 }
