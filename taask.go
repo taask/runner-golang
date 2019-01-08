@@ -82,7 +82,7 @@ func (r *Runner) auth(joinCode string) ([]byte, error) {
 		return nil, errors.Wrap(err, "failed to signedAuthHashAttempt")
 	}
 
-	authReq := &service.AuthRunnerRequest{
+	authReq := &service.AuthMemberRequest{
 		UUID:              r.runner.UUID,
 		PubKey:            r.keypair.SerializablePubKey(),
 		AuthHashSignature: authHashSignature,

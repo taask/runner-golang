@@ -110,7 +110,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:57e4354c15956246bf0ff0951d46c58e25a5f28fdbce06e238d3f507e8e392a7"
+  digest = "1:f904e07b3cbcc1355fe1f5b460b0286ca8ceca023e2f2ec34b5271aa01ea1358"
   name = "github.com/taask/taask-server"
   packages = [
     "auth",
@@ -124,7 +124,7 @@
     "update",
   ]
   pruneopts = "UT"
-  revision = "31a7b73503a03f3ea121b783445aafcb158f874e"
+  revision = "e369aa9c4bd3d70a4fe68b9ed800eed43f83fe81"
 
 [[projects]]
   branch = "master"
@@ -236,6 +236,7 @@
     "github.com/cohix/simplcrypto",
     "github.com/cohix/simplog",
     "github.com/pkg/errors",
+    "github.com/taask/taask-server/auth",
     "github.com/taask/taask-server/model",
     "github.com/taask/taask-server/service",
     "google.golang.org/grpc",
