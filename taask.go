@@ -6,12 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path"
 	"time"
 
 	"github.com/cohix/simplcrypto"
 
 	log "github.com/cohix/simplog"
 	"github.com/pkg/errors"
+	cconfig "github.com/taask/client-golang/config"
+	"github.com/taask/runner-golang/config"
 	"github.com/taask/taask-server/auth"
 	"github.com/taask/taask-server/model"
 	"github.com/taask/taask-server/service"
@@ -23,10 +26,11 @@ type TaskHandler func([]byte) (interface{}, error)
 
 // Runner describes a runner
 type Runner struct {
-	runner  *model.Runner
-	keypair *simplcrypto.KeyPair
-	client  service.RunnerServiceClient
-	handler TaskHandler
+	runner    *model.Runner
+	keypair   *simplcrypto.KeyPair
+	client    service.RunnerServiceClient
+	localAuth *cconfig.LocalAuthConfig
+	handler   TaskHandler
 }
 
 // NewRunner creates a new runner
@@ -51,8 +55,8 @@ func NewRunner(kind string, tags []string, handler TaskHandler) (*Runner, error)
 	return runner, nil
 }
 
-// ConnectAndRun connects to a taask-server, registers the runner, and runs
-func (r *Runner) ConnectAndRun(joinCode, addr, port string) error {
+// ConnectAndStreamTasks connects to a taask-server, registers the runner, and runs
+func (r *Runner) ConnectAndStreamTasks(addr, port string) error {
 	log.LogInfo(fmt.Sprintf("starting runner of kind %s", r.runner.Kind))
 
 	conn, err := grpc.Dial(fmt.Sprintf("%s:%s", addr, port), grpc.WithInsecure())
@@ -62,57 +66,122 @@ func (r *Runner) ConnectAndRun(joinCode, addr, port string) error {
 
 	r.client = service.NewRunnerServiceClient(conn)
 
-	challenge, err := r.auth(joinCode)
-	if err != nil {
+	if err := r.authWithDefaultConfig(); err != nil {
 		return errors.Wrap(err, "failed to auth")
 	}
 
-	if err := r.run(challenge); err != nil {
+	if err := r.run(); err != nil {
 		return errors.Wrap(err, "failed to run")
 	}
 
 	return nil
 }
 
-func (r *Runner) auth(joinCode string) ([]byte, error) {
-	defer log.LogTrace("auth")()
+// ConnectAndRunTaskFromFile connects to a taask-server, registers the runner, and runs one task
+func (r *Runner) ConnectAndRunTaskFromFile(filepath, addr, port string) error {
+	log.LogInfo(fmt.Sprintf("starting runner of kind %s", r.runner.Kind))
 
-	authHashSignature, timestamp, err := signedAuthHashAttempt(r.keypair, joinCode)
+	conn, err := grpc.Dial(fmt.Sprintf("%s:%s", addr, port), grpc.WithInsecure())
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to signedAuthHashAttempt")
+		return errors.Wrap(err, "failed to Dial")
 	}
 
-	authReq := &service.AuthMemberRequest{
-		UUID:              r.runner.UUID,
-		PubKey:            r.keypair.SerializablePubKey(),
-		AuthHashSignature: authHashSignature,
-		Timestamp:         timestamp,
+	r.client = service.NewRunnerServiceClient(conn)
+
+	if err := r.authWithDefaultConfig(); err != nil {
+		return errors.Wrap(err, "failed to auth")
 	}
 
-	resp, err := r.client.AuthRunner(context.Background(), authReq)
+	task, err := readTaskFile(filepath)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to AuthRunner")
+		return errors.Wrap(err, "failed to readTaskFile")
 	}
 
-	challenge, err := r.keypair.Decrypt(resp.EncChallenge)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to Decrypt challenge")
-	}
+	r.runTask(task, r.handler)
 
-	return challenge, nil
+	return nil
 }
 
-func (r *Runner) run(challenge []byte) error {
-	challengeSig, err := r.keypair.Sign(challenge)
+func (r *Runner) authWithDefaultConfig() error {
+	filepath := path.Join(config.DefaultRunnerConfigDir(), config.ConfigRunnerDefaultFilename)
+	localAuth, err := cconfig.LocalAuthConfigFromFile(filepath)
+	if err != nil {
+		return errors.Wrap(err, "failed to LocalAuthConfigFromFile")
+	}
+
+	return r.authenticate(localAuth)
+}
+
+// Authenticate auths with the taask server and saves the session
+func (r *Runner) authenticate(localAuth *cconfig.LocalAuthConfig) error {
+	r.localAuth = localAuth
+
+	memberUUID := model.NewRunnerUUID()
+
+	keypair, err := simplcrypto.GenerateNewKeyPair()
+	if err != nil {
+		return errors.Wrap(err, "failed to GenerateNewKeyPair")
+	}
+
+	timestamp := time.Now().Unix()
+
+	nonce := make([]byte, 8)
+	binary.LittleEndian.PutUint64(nonce, uint64(timestamp))
+	hashWithNonce := append(r.localAuth.MemberGroup.AuthHash, nonce...)
+
+	authHashSig, err := keypair.Sign(hashWithNonce)
 	if err != nil {
 		return errors.Wrap(err, "failed to Sign")
 	}
 
+	attempt := &service.AuthMemberRequest{
+		UUID:              memberUUID,
+		GroupUUID:         r.localAuth.MemberGroup.UUID,
+		PubKey:            keypair.SerializablePubKey(),
+		AuthHashSignature: authHashSig,
+		Timestamp:         timestamp,
+	}
+
+	authResp, err := r.client.AuthRunner(context.Background(), attempt)
+	if err != nil {
+		return errors.Wrap(err, "failed to AuthClient")
+	}
+
+	challengeBytes, err := keypair.Decrypt(authResp.EncChallenge)
+	if err != nil {
+		return errors.Wrap(err, "failed to Decrypt challenge")
+	}
+
+	masterRunnerPubKey, err := simplcrypto.KeyPairFromSerializedPubKey(authResp.MasterPubKey)
+	if err != nil {
+		return errors.Wrap(err, "failed to KeyPairFromSerializablePubKey")
+	}
+
+	challengeSig, err := keypair.Sign(challengeBytes)
+	if err != nil {
+		return errors.Wrap(err, "failed to Sign challenge")
+	}
+
+	session := cconfig.ActiveSession{
+		Session: &auth.Session{
+			MemberUUID:          memberUUID,
+			GroupUUID:           r.localAuth.MemberGroup.UUID,
+			SessionChallengeSig: challengeSig,
+		},
+		Keypair:            keypair,
+		MasterRunnerPubKey: masterRunnerPubKey,
+	}
+
+	r.localAuth.ActiveSession = session
+
+	return nil
+}
+
+func (r *Runner) run() error {
 	req := &service.RegisterRunnerRequest{
-		UUID:               r.runner.UUID,
-		Kind:               r.runner.Kind,
-		Tags:               r.runner.Tags,
-		ChallengeSignature: challengeSig,
+		Kind:    r.runner.Kind,
+		Tags:    r.runner.Tags,
+		Session: r.localAuth.ActiveSession.Session,
 	}
 
 	log.LogInfo("registering with server...")
@@ -143,50 +212,52 @@ func (r *Runner) run(challenge []byte) error {
 
 		log.LogInfo(fmt.Sprintf("received task with uuid %s", task.UUID))
 
-		go func(handler TaskHandler, task *model.Task) {
-			// set task status to active
-			// sendUpdate calls task.Update, so have to do this synchronously
-			if err := r.sendUpdate(task, nil, nil, nil); err != nil {
-				log.LogError(errors.Wrap(err, "failed to sendUpdate"))
-				return
-			}
-
-			taskKeyJSON, err := r.keypair.Decrypt(task.Meta.RunnerEncTaskKey)
-			if err != nil {
-				log.LogError(errors.Wrap(err, "failed to Decrypt task key"))
-				return
-			}
-
-			taskKey, err := simplcrypto.SymKeyFromJSON(taskKeyJSON)
-			if err != nil {
-				log.LogError(errors.Wrap(err, "failed to SymKeyFromJSON"))
-				return
-			}
-
-			taskBodyJSON, err := taskKey.Decrypt(task.EncBody)
-			if err != nil {
-				log.LogError(errors.Wrap(err, "failed to Decrypt task body"))
-				return
-			}
-
-			result, err := handler(taskBodyJSON)
-			if err != nil {
-				// sendUpdate calls task.Update
-				if err := r.sendUpdate(task, taskKey, nil, err); err != nil {
-					log.LogError(errors.Wrap(err, "failed to sendUpdate"))
-				}
-
-				return
-			}
-
-			// sendUpdate calls task.Update... just making sure you know.
-			if err := r.sendUpdate(task, taskKey, result, nil); err != nil {
-				log.LogError(errors.Wrap(err, "failed to sendUpdate"))
-			}
-		}(r.handler, task)
+		go r.runTask(task, r.handler)
 	}
 
 	return nil
+}
+
+func (r *Runner) runTask(task *model.Task, handler TaskHandler) {
+	// set task status to active
+	// sendUpdate calls task.Update, so have to do this synchronously
+	if err := r.sendUpdate(task, nil, nil, nil); err != nil {
+		log.LogError(errors.Wrap(err, "failed to sendUpdate"))
+		return
+	}
+
+	taskKeyJSON, err := r.keypair.Decrypt(task.Meta.RunnerEncTaskKey)
+	if err != nil {
+		log.LogError(errors.Wrap(err, "failed to Decrypt task key"))
+		return
+	}
+
+	taskKey, err := simplcrypto.SymKeyFromJSON(taskKeyJSON)
+	if err != nil {
+		log.LogError(errors.Wrap(err, "failed to SymKeyFromJSON"))
+		return
+	}
+
+	taskBodyJSON, err := taskKey.Decrypt(task.EncBody)
+	if err != nil {
+		log.LogError(errors.Wrap(err, "failed to Decrypt task body"))
+		return
+	}
+
+	result, err := handler(taskBodyJSON)
+	if err != nil {
+		// sendUpdate calls task.Update
+		if err := r.sendUpdate(task, taskKey, nil, err); err != nil {
+			log.LogError(errors.Wrap(err, "failed to sendUpdate"))
+		}
+
+		return
+	}
+
+	// sendUpdate calls task.Update... just making sure you know.
+	if err := r.sendUpdate(task, taskKey, result, nil); err != nil {
+		log.LogError(errors.Wrap(err, "failed to sendUpdate"))
+	}
 }
 
 func (r *Runner) sendUpdate(task *model.Task, taskKey *simplcrypto.SymKey, result interface{}, taskErr error) error {
@@ -227,7 +298,12 @@ func (r *Runner) sendUpdate(task *model.Task, taskKey *simplcrypto.SymKey, resul
 		return errors.Wrap(err, "failed to task.Update")
 	}
 
-	if _, err := r.client.UpdateTask(context.Background(), &realUpdate); err != nil {
+	req := &service.UpdateTaskRequest{
+		Update:  &realUpdate,
+		Session: r.localAuth.ActiveSession.Session,
+	}
+
+	if _, err := r.client.UpdateTask(context.Background(), req); err != nil {
 		return errors.Wrap(err, "failed to UpdateTask")
 	}
 

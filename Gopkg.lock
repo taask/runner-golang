@@ -110,11 +110,20 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:f904e07b3cbcc1355fe1f5b460b0286ca8ceca023e2f2ec34b5271aa01ea1358"
+  digest = "1:06c3d096e1fe8b7c82fd631a73b154f02510d6481860c839a87236c21541d151"
+  name = "github.com/taask/client-golang"
+  packages = ["config"]
+  pruneopts = "UT"
+  revision = "dd23ce45620e1448b0a02912173f48cbcd8496a7"
+
+[[projects]]
+  branch = "master"
+  digest = "1:bb2f8e0fce7a9b1ea70f9d1ddec2488fc22076c4a492c4a29f1142d1291801b9"
   name = "github.com/taask/taask-server"
   packages = [
     "auth",
     "brain",
+    "config",
     "metrics",
     "model",
     "model/validator",
@@ -124,7 +133,7 @@
     "update",
   ]
   pruneopts = "UT"
-  revision = "e369aa9c4bd3d70a4fe68b9ed800eed43f83fe81"
+  revision = "f7e9e5bfa2da2b62a160e540fc6c115fa92885c2"
 
 [[projects]]
   branch = "master"
@@ -229,6 +238,14 @@
   revision = "df014850f6dee74ba2fc94874043a9f3f75fbfd8"
   version = "v1.17.0"
 
+[[projects]]
+  digest = "1:4d2e5a73dc1500038e504a8d78b986630e3626dc027bc030ba5c75da257cdb96"
+  name = "gopkg.in/yaml.v2"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "51d6538a90f86fe93ac480b35f37b2be17fef232"
+  version = "v2.2.2"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
@@ -236,6 +253,7 @@
     "github.com/cohix/simplcrypto",
     "github.com/cohix/simplog",
     "github.com/pkg/errors",
+    "github.com/taask/client-golang/config",
     "github.com/taask/taask-server/auth",
     "github.com/taask/taask-server/model",
     "github.com/taask/taask-server/service",
