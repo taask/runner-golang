@@ -24,13 +24,17 @@ import (
 // TaskHandler represents a handler that can handle a task
 type TaskHandler func([]byte) (interface{}, error)
 
+// SpecTaskHandler represents a handler that can handle a spec task
+type SpecTaskHandler func(*DecryptedTask) (interface{}, error)
+
 // Runner describes a runner
 type Runner struct {
-	runner    *model.Runner
-	keypair   *simplcrypto.KeyPair
-	client    service.RunnerServiceClient
-	localAuth *cconfig.LocalAuthConfig
-	handler   TaskHandler
+	runner      *model.Runner
+	keypair     *simplcrypto.KeyPair
+	client      service.RunnerServiceClient
+	localAuth   *cconfig.LocalAuthConfig
+	handler     TaskHandler
+	specHandler SpecTaskHandler
 }
 
 // NewRunner creates a new runner
@@ -50,6 +54,28 @@ func NewRunner(kind string, tags []string, handler TaskHandler) (*Runner, error)
 		runner:  modelRunner,
 		keypair: keypair,
 		handler: handler,
+	}
+
+	return runner, nil
+}
+
+// NewSpecRunner creates a new runner that handles spec tasks
+func NewSpecRunner(kind string, tags []string, handler SpecTaskHandler) (*Runner, error) {
+	modelRunner := &model.Runner{
+		UUID: model.NewRunnerUUID(),
+		Kind: kind,
+		Tags: tags,
+	}
+
+	keypair, err := simplcrypto.GenerateNewKeyPair()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to GenerateNewKeyPair")
+	}
+
+	runner := &Runner{
+		runner:      modelRunner,
+		keypair:     keypair,
+		specHandler: handler,
 	}
 
 	return runner, nil
@@ -97,7 +123,7 @@ func (r *Runner) ConnectAndRunTaskFromFile(filepath, addr, port string) error {
 		return errors.Wrap(err, "failed to readTaskFile")
 	}
 
-	r.runTask(task, r.handler)
+	r.runTask(task)
 
 	return nil
 }
@@ -212,13 +238,13 @@ func (r *Runner) run() error {
 
 		log.LogInfo(fmt.Sprintf("received task with uuid %s", task.UUID))
 
-		go r.runTask(task, r.handler)
+		go r.runTask(task)
 	}
 
 	return nil
 }
 
-func (r *Runner) runTask(task *model.Task, handler TaskHandler) {
+func (r *Runner) runTask(task *model.Task) {
 	// set task status to active
 	// sendUpdate calls task.Update, so have to do this synchronously
 	if err := r.sendUpdate(task, nil, nil, nil); err != nil {
@@ -244,10 +270,25 @@ func (r *Runner) runTask(task *model.Task, handler TaskHandler) {
 		return
 	}
 
-	result, err := handler(taskBodyJSON)
-	if err != nil {
+	var result interface{}
+	var handlerErr error
+	if r.handler != nil {
+		result, handlerErr = r.handler(taskBodyJSON)
+	} else if r.specHandler != nil {
+		decryptedTask := DecryptedTask{
+			Task: *task,
+			Body: taskBodyJSON,
+		}
+
+		result, handlerErr = r.specHandler(&decryptedTask)
+	} else {
+		log.LogError(errors.New("handler and specHandler are nil, bailing out"))
+		return
+	}
+
+	if handlerErr != nil {
 		// sendUpdate calls task.Update
-		if err := r.sendUpdate(task, taskKey, nil, err); err != nil {
+		if err := r.sendUpdate(task, taskKey, nil, handlerErr); err != nil {
 			log.LogError(errors.Wrap(err, "failed to sendUpdate"))
 		}
 
