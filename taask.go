@@ -30,7 +30,6 @@ type SpecTaskHandler func(*DecryptedTask) (interface{}, error)
 // Runner describes a runner
 type Runner struct {
 	runner      *model.Runner
-	keypair     *simplcrypto.KeyPair
 	client      service.RunnerServiceClient
 	localAuth   *cconfig.LocalAuthConfig
 	handler     TaskHandler
@@ -45,14 +44,8 @@ func NewRunner(kind string, tags []string, handler TaskHandler) (*Runner, error)
 		Tags: tags,
 	}
 
-	keypair, err := simplcrypto.GenerateNewKeyPair()
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to GenerateNewKeyPair")
-	}
-
 	runner := &Runner{
 		runner:  modelRunner,
-		keypair: keypair,
 		handler: handler,
 	}
 
@@ -67,14 +60,8 @@ func NewSpecRunner(kind string, tags []string, handler SpecTaskHandler) (*Runner
 		Tags: tags,
 	}
 
-	keypair, err := simplcrypto.GenerateNewKeyPair()
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to GenerateNewKeyPair")
-	}
-
 	runner := &Runner{
 		runner:      modelRunner,
-		keypair:     keypair,
 		specHandler: handler,
 	}
 
@@ -246,7 +233,7 @@ func (r *Runner) runTask(task *model.Task) {
 		return
 	}
 
-	taskKeyJSON, err := r.keypair.Decrypt(task.Meta.RunnerEncTaskKey)
+	taskKeyJSON, err := r.localAuth.ActiveSession.Keypair.Decrypt(task.Meta.RunnerEncTaskKey)
 	if err != nil {
 		log.LogError(errors.Wrap(err, "failed to Decrypt task key"))
 		return
