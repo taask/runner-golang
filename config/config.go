@@ -21,8 +21,12 @@ func DefaultRunnerConfigDir() string {
 
 	root := u.HomeDir
 	xdgConfig, useXDG := os.LookupEnv("XDG_CONFIG_HOME")
-	if useXDG {
+	if useXDG && xdgConfig != "" {
 		root = xdgConfig
+	}
+
+	if root == "" {
+		return "/root/.taask/runner/config" // last resort
 	}
 
 	return path.Join(root, ConfigRunnerBaseDir)
