@@ -178,11 +178,6 @@ func (r *Runner) authenticate(localAuth *cconfig.LocalAuthConfig) error {
 		return errors.Wrap(err, "failed to Decrypt challenge")
 	}
 
-	masterRunnerPubKey, err := simplcrypto.KeyPairFromSerializedPubKey(authResp.MasterPubKey)
-	if err != nil {
-		return errors.Wrap(err, "failed to KeyPairFromSerializablePubKey")
-	}
-
 	challengeSig, err := keypair.Sign(challengeBytes)
 	if err != nil {
 		return errors.Wrap(err, "failed to Sign challenge")
@@ -194,8 +189,7 @@ func (r *Runner) authenticate(localAuth *cconfig.LocalAuthConfig) error {
 			GroupUUID:           r.localAuth.MemberGroup.UUID,
 			SessionChallengeSig: challengeSig,
 		},
-		Keypair:            keypair,
-		MasterRunnerPubKey: masterRunnerPubKey,
+		Keypair: keypair,
 	}
 
 	r.localAuth.ActiveSession = session
