@@ -233,7 +233,13 @@ func (r *Runner) runTask(task *model.Task) {
 		return
 	}
 
-	taskKeyJSON, err := r.localAuth.ActiveSession.Keypair.Decrypt(task.Meta.RunnerEncTaskKey)
+	encTaskKey := task.GetEncTaskKey(r.localAuth.ActiveSession.Keypair.KID)
+	if encTaskKey == nil {
+		log.LogError(fmt.Errorf("task did not include encTaskKey with KID %s", r.localAuth.ActiveSession.Keypair.KID))
+		return
+	}
+
+	taskKeyJSON, err := r.localAuth.ActiveSession.Keypair.Decrypt(encTaskKey)
 	if err != nil {
 		log.LogError(errors.Wrap(err, "failed to Decrypt task key"))
 		return
