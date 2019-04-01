@@ -322,6 +322,13 @@ func (r *Runner) sendUpdate(task *model.Task, taskKey *simplcrypto.SymKey, resul
 	}
 
 	update := task.BuildUpdate(changes)
+	updatedTask, err := model.ApplyUpdateToTask(task, update)
+	if err != nil {
+		return errors.Wrap(err, "failed to ApplyUpdateToTask")
+	}
+
+	// TODO: figure out how to not update task in-place
+	task = updatedTask
 
 	req := &service.UpdateTaskRequest{
 		Update:  update,
