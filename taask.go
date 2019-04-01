@@ -289,15 +289,15 @@ func (r *Runner) runTask(task *model.Task) {
 }
 
 func (r *Runner) sendUpdate(task *model.Task, taskKey *simplcrypto.SymKey, result interface{}, taskErr error) error {
-	update := model.TaskUpdate{}
+	changes := model.TaskChanges{}
 
 	if result == nil && taskErr == nil {
-		update.Status = model.TaskStatusRunning
+		changes.Status = model.TaskStatusRunning
 	} else {
 		var encResult *simplcrypto.Message
 
 		if result == nil && taskErr != nil {
-			update.Status = model.TaskStatusFailed
+			changes.Status = model.TaskStatusFailed
 
 			var err error
 			encResult, err = taskKey.Encrypt([]byte(taskErr.Error()))
@@ -305,7 +305,7 @@ func (r *Runner) sendUpdate(task *model.Task, taskKey *simplcrypto.SymKey, resul
 				return errors.Wrap(err, "failed to Encrypt error result")
 			}
 		} else if result != nil && taskErr == nil {
-			update.Status = model.TaskStatusCompleted
+			changes.Status = model.TaskStatusCompleted
 
 			resultJSON, err := json.Marshal(result)
 			if err != nil {
@@ -318,16 +318,13 @@ func (r *Runner) sendUpdate(task *model.Task, taskKey *simplcrypto.SymKey, resul
 			}
 		}
 
-		update.EncResult = encResult
+		changes.EncResult = encResult
 	}
 
-	realUpdate, err := task.Update(update)
-	if err != nil {
-		return errors.Wrap(err, "failed to task.Update")
-	}
+	update := task.BuildUpdate(changes)
 
 	req := &service.UpdateTaskRequest{
-		Update:  &realUpdate,
+		Update:  update,
 		Session: r.localAuth.ActiveSession.Session,
 	}
 
